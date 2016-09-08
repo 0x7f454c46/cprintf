@@ -33,6 +33,8 @@ clean:
 	rm -f $(addsuffix .so,$(PLUGIN)) $(addsuffix .o,$(PLUGIN))
 
 check: $(PLUGIN_SO)
-	$(CXX) -fplugin=./$(PLUGIN_SO) -c -x c++ /dev/null -o /dev/null
+	$(CXX) -fplugin=./$(PLUGIN_SO) -c -x c++ /dev/null -o /dev/null	\
+		-fplugin-arg-cprintf-log_level=Err			\
+		-fplugin-arg-cprintf-printf="printf(1): %c putchar"
 
 .PHONY: all clean check

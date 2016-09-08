@@ -96,27 +96,138 @@ namespace log {
 	      debug(LOG_DEBUG), all(LOG_ALL);
 };
 
-struct cprintf_func_t {
-	std::string				function;
-	unsigned int				fmt_position;
-	std::map<std::string, std::string>	specifier_to_func;
+namespace printfun {
+	struct printfun_t {
+		std::string				function;
+		unsigned int				fmt_pos;
+		std::map<std::string, std::string>	spec_to_func;
+	};
+	std::vector<printfun_t> printfuns;
+
+	static const char *parse_get_fmt_pos(const char *printfun_def,
+			unsigned int *out, std::string &func)
+	{
+		size_t fmt_pos_len;
+
+		if (*printfun_def != '(') {
+			std::string err("Fmt-string argument position is unknown in function `");
+			throw std::logic_error(err + func + "'");
+		}
+		printfun_def++;
+		try {
+			*out = std::stoul(printfun_def, &fmt_pos_len, 10);
+		} catch(...) {
+			std::string err("Invalid format position in `");
+			throw std::logic_error(err + func + "' function");
+		}
+		if (fmt_pos_len == 0) {
+			std::string err("Failed to parse format position of `");
+			throw std::logic_error(err + func + "' function");
+		}
+		printfun_def += fmt_pos_len;
+		if (*printfun_def != ')') {
+			std::string err("Can't find closing brace for fmt-string position of `");
+			throw std::logic_error(err + func + "' function");
+		}
+		printfun_def++;
+		if (*printfun_def == '\0') {
+			std::string err("Unexpected line end after `");
+			throw std::logic_error(err + func + "' function");
+		}
+		return printfun_def;
+	}
+
+	static const char *parse_get_function(const char *printfun_def,
+			std::string *out)
+	{
+		while (ISBLANK(*printfun_def)) printfun_def++;
+		if (*printfun_def == '\0')
+			throw std::logic_error("No function name specified");
+		if (!ISALPHA(*printfun_def)) {
+			std::string err("Function name should start with character: `");
+			err += *printfun_def++;
+			while (ISALPHA(*printfun_def) || ISDIGIT(*printfun_def))
+				err += *printfun_def++;
+			throw std::logic_error(err + "'");
+		}
+
+		while (ISALPHA(*printfun_def) || ISDIGIT(*printfun_def))
+			*out += *printfun_def++;
+		return printfun_def;
+	}
+
+	static const char *parse_get_specifier(const char *printfun_def,
+			std::string *out)
+	{
+		while (ISBLANK(*printfun_def)) printfun_def++;
+		if (*printfun_def == '\0')
+			return printfun_def;
+		if (*printfun_def != '%') {
+			std::string err("Expected %-specifier, but got: `");
+			while (*printfun_def != '\0' && !ISBLANK(*printfun_def))
+				err += *printfun_def++;
+			throw std::logic_error(err + "'");
+		}
+		printfun_def++;
+		if (ISBLANK(*printfun_def))
+			throw std::logic_error("Got empty %-specifier");
+		while (!ISBLANK(*printfun_def)) {
+			if (*printfun_def == '\0') {
+				std::string err("Unexpected %-specifier end, got: `");
+				err += "%";
+				throw std::logic_error(err + *out + "'");
+			}
+			*out += *printfun_def++;
+		}
+		return printfun_def;
+	}
+
+	static void parse_printfun(const char *printfun_def)
+	{
+		printfun_t pf;
+		unsigned int i;
+
+		printfun_def = parse_get_function(printfun_def, &pf.function);
+		printfun_def = parse_get_fmt_pos(printfun_def,
+				&pf.fmt_pos, pf.function);
+		printfun_def++; /* skip function delimiter */
+
+		for (i = 0;;i++) {
+			std::string spec, func;
+
+			printfun_def = parse_get_specifier(printfun_def, &spec);
+			if (*printfun_def == '\0')
+				break;
+			printfun_def = parse_get_function(printfun_def, &func);
+			printfun_def++; /* skip function delimiter */
+
+			if (pf.spec_to_func.find(spec) != pf.spec_to_func.end()) {
+				std::string err("%-Specifier `");
+				err += spec;
+				throw std::logic_error(err + "' found twice");
+			}
+			pf.spec_to_func[spec] = func;
+		}
+
+		if (i == 0) {
+			std::string err("Found no %-specifiers for `");
+			err += pf.function;
+			throw std::logic_error(err + "' function");
+		}
+
+		printfuns.push_back(pf);
+	}
 };
 
-struct cprintf_opts_t {
-	std::vector<cprintf_func_t> printfun;
-} cprintf_opts;
-
 typedef void (*arg_parse)(const char*);
-
-static void arg_printf(const char *print_func_def)
-{
-}
 
 static std::map<std::string, arg_parse> cprintf_args_create(void)
 {
 	std::map<std::string, arg_parse> ret;
+
 	ret["log_level"] = &log::set_log_level;
-	ret["printf"] = &arg_printf;
+	ret["printf"] = &printfun::parse_printfun;
+
 	return ret;
 }
 const static std::map<std::string, arg_parse>
@@ -133,14 +244,16 @@ static int parse_parameters(struct plugin_name_args *info)
 				<< "', terminating\n";
 			return 1;
 		} catch (const std::logic_error &le) {
-			log::err << "Parse parameter failed: "
-				<< le.what() << std::endl;
+			log::err << "Parse parameter `" << info->argv[i].key
+				<< "' failed:\n" << le.what() << std::endl;
 			return 1;
 		}
 	}
 
-	if (cprintf_opts.printfun.size() == 0) {
-		/* set defaults */
+	if (printfun::printfuns.size() == 0) {
+		/* no printf arg */
+		log::err << "Specify `printf' argument with function specification\n";
+		return 1;
 	}
 
 	return 0;
