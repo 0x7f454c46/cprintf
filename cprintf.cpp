@@ -100,6 +100,7 @@ namespace printfun {
 	struct printfun_t {
 		unsigned int				fmt_pos;
 		std::map<std::string, std::string>	spec_to_func;
+		std::map<std::string, tree>		spec_to_tree;
 	};
 	std::map<std::string, printfun_t> printfuns;
 
@@ -375,10 +376,9 @@ namespace gcc_hell {
 		static inline tree printfun_get_const_fmt(gcall *stmt,
 				const char *func_name)
 		{
-			printfun::printfun_t pf;
 			tree fmt_str;
-
-			pf = printfun::printfuns.at(func_name);
+			printfun::printfun_t &pf =
+				printfun::printfuns.at(func_name);
 
 			if (gimple_call_num_args(stmt) <= pf.fmt_pos)
 				return NULL_TREE;
@@ -427,13 +427,100 @@ namespace gcc_hell {
 			struct walk_stmt_info *wi, gcall *stmt,
 			const char *func_name, tree const_fmt)
 		{
+			const char *fmt = TREE_STRING_POINTER(const_fmt);
+			std::vector<std::pair<std::string, bool>> tokens;
 			gimple *g = gsi_stmt(*gsi);
+			printfun::printfun_t &pf =
+				printfun::printfuns.at(func_name);
+
 			log::info << "\t\tTrying to handle `"
 				<< func_name << "' call";
 			if (gimple_has_location(g))
 				log::info << " at " << gimple_filename(g)
 					<< ":" << gimple_lineno(g);
 			log::info << std::endl;
+
+			tokens = tokens_create(fmt, pf);
+			if (tokens.size() == 0) {
+				if (gimple_has_location(g))
+					log::warn << "Ignoring format string at:"
+						<< gimple_filename(g) << ":"
+						<< gimple_lineno(g) << "\n";
+			}
+			log::debug << "\t\tTokens from format string: ";
+			for (std::vector<std::pair<std::string, bool>>::iterator i =
+					tokens.begin(); i != tokens.end(); ++i) {
+				if (i->second)
+					log::debug << "%" << i->first << ", ";
+				else
+					log::debug << "`" << (*i).first << "', ";
+			}
+			log::debug << std::endl;
+
+		}
+
+		static std::vector<std::pair<std::string, bool>>
+		tokens_create(const char *fmt, const printfun::printfun_t &pf)
+		{
+			std::vector<std::pair<std::string, bool>> ret;
+			std::string token;
+
+			while (*fmt != '\0') {
+				if (*fmt != '%') {
+					token += *fmt++;
+					continue;
+				}
+				/* escaped '%' symbol */
+				if (*(fmt + 1) == '%') {
+					token += '%';
+					fmt += 2;
+					continue;
+				}
+				fmt++;
+				if (token.length()) {
+					ret.push_back(std::make_pair(token,false));
+					token.clear();
+				}
+				token = specifier_search(fmt, pf);
+				if (token.length() == 0) {
+					log::warn << "This specifier wasn't defined in plugin parameters: `"
+						<< "%" << fmt << "'\n";
+					return std::vector<std::pair<std::string,bool>>();
+				}
+				ret.push_back(std::make_pair(token,true));
+				fmt += token.length();
+				token.clear();
+			}
+
+			if (token.length())
+				ret.push_back(std::make_pair(token,false));
+			return ret;
+		}
+
+		static std::string specifier_search(const char *fmt,
+			const printfun::printfun_t &pf)
+		{
+			typedef std::map<std::string,std::string>::const_iterator si;
+			std::string spec;
+			std::string ret;
+
+			while (*fmt != '\0') {
+				std::pair<si,si> range;
+				std::string next_str;
+
+				spec += *fmt++;
+				if (pf.spec_to_func.find(spec) != pf.spec_to_func.end()) {
+					ret = spec;
+					continue;
+				}
+
+				range = pf.spec_to_func.equal_range(spec);
+				next_str = range.first->first;
+				if (next_str.compare(0, spec.length(), spec))
+					break;
+			}
+
+			return ret;
 		}
 	};
 };
