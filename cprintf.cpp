@@ -222,6 +222,13 @@ namespace printfun {
 		}
 
 		printfuns[fun_name] = pf;
+
+		log::debug << "Added new function to printfuns: `"
+			<< fun_name << "(" << pf.fmt_pos << "):\n";
+		std::map<std::string, std::string>::const_iterator s;
+		for (s = pf.spec_to_func.cbegin(); s != pf.spec_to_func.cend(); ++s)
+			log::debug << "\t%" << (*s).first
+				<< "\t" << (*s).second << std::endl;
 	}
 };
 
