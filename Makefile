@@ -31,10 +31,14 @@ all: $(PLUGIN_SO)
 
 clean:
 	rm -f $(addsuffix .so,$(PLUGIN)) $(addsuffix .o,$(PLUGIN))
+	rm -f ./test/quicksort
 
 check: $(PLUGIN_SO)
 	$(CXX) -fplugin=./$(PLUGIN_SO) -c -x c++ /dev/null -o /dev/null	\
 		-fplugin-arg-cprintf-log_level=Err			\
+		-fplugin-arg-cprintf-printf="printf(1): %c putchar"
+	$(CC) -fplugin=./$(PLUGIN_SO)					\
+		./test/quicksort.c -o ./test/quicksort			\
 		-fplugin-arg-cprintf-printf="printf(1): %c putchar"
 
 .PHONY: all clean check
