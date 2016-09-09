@@ -299,7 +299,7 @@ namespace gcc_hell {
 		{
 			struct walk_stmt_info walk_stmt_info;
 
-			log::debug << "*** cprintf walk for function `"
+			log::info << "*** cprintf walk for function `"
 				<< function_name(fun) << "' at "
 				<< LOCATION_FILE(fun->function_start_locus)
 				<< ":"
@@ -322,14 +322,38 @@ namespace gcc_hell {
 			bool *handled_all_ops, struct walk_stmt_info *wi)
 		{
 			gimple *g = gsi_stmt(*gsi);
-			enum gimple_code code = gimple_code(g);
+			const char *func_name;
+			gcall *call_stmt;
+			tree fndecl;
 
-			log::debug << "\tCallback for statement: `"
-				<< gimple_code_name[code];
+			/* Interested only in printf-alike function calls */
+			if (!is_gimple_call(g))
+				return NULL;
+
+			call_stmt = dyn_cast<gcall *>(g);
+			fndecl = gimple_call_fndecl(call_stmt);
+
+			if (fndecl == NULL_TREE)
+				return NULL;
+
+			func_name = get_name(fndecl);
+
+			log::debug << "\tCall to function `" << func_name << "'";
 			if (gimple_has_location(g))
-				log::debug << "' at " << gimple_filename(g)
+				log::debug << " at " << gimple_filename(g)
 					<< ":" << gimple_lineno(g);
 			log::debug << std::endl;
+
+			if (!func_is_printfun(func_name))
+				return NULL;
+
+			log::debug << "\tChecking `"
+			       << func_name << "' for constant fmt string\n";
+
+			if (!printfun_has_const_fmt(call_stmt, func_name))
+				return NULL;
+
+			handle_printfunc(g, gsi, wi, call_stmt, func_name);
 
 			return NULL;
 		}
@@ -337,6 +361,75 @@ namespace gcc_hell {
 		static tree callback_op(tree *t, int *, void *data)
 		{
 			return NULL;
+		}
+
+		static inline bool func_is_printfun(const char *fun)
+		{
+			return printfun::printfuns.find(fun) !=
+				printfun::printfuns.end();
+		}
+
+		static inline bool printfun_has_const_fmt(gcall *stmt,
+				const char *func_name)
+		{
+			printfun::printfun_t pf;
+			tree fmt_str;
+
+			pf = printfun::printfuns.at(func_name);
+
+			if (gimple_call_num_args(stmt) <= pf.fmt_pos)
+				return false;
+
+			fmt_str = gimple_call_arg(stmt, pf.fmt_pos);
+			fmt_str = get_string_cst(fmt_str);
+
+			if (fmt_str == NULL_TREE)
+				return false;
+
+			if (!TREE_CONSTANT(fmt_str))
+				return false;
+
+			return true;
+		}
+
+		static tree get_string_cst(tree var)
+		{
+			if (var == NULL_TREE)
+				return NULL_TREE;
+
+			if (TREE_CODE(var) == STRING_CST)
+				return var;
+
+			switch (TREE_CODE_CLASS(TREE_CODE(var))) {
+				case tcc_expression:
+				case tcc_reference: {
+					int i = 0;
+					for (; i < TREE_OPERAND_LENGTH(var); i++)
+					{
+						tree ret = TREE_OPERAND(var, i);
+						ret = get_string_cst(ret);
+						if (ret != NULL_TREE)
+							return ret;
+					}
+					break;
+				}
+				default:
+					break;
+			}
+
+			return NULL_TREE;
+		}
+
+		static void handle_printfunc(gimple *g,
+			gimple_stmt_iterator *gsi, struct walk_stmt_info *wi,
+			gcall *stmt, const char *func_name)
+		{
+			log::info << "\t\tTrying to handle `"
+				<< func_name << "' call";
+			if (gimple_has_location(g))
+				log::info << " at " << gimple_filename(g)
+					<< ":" << gimple_lineno(g);
+			log::info << std::endl;
 		}
 	};
 };
