@@ -325,6 +325,7 @@ namespace gcc_hell {
 			const char *func_name;
 			gcall *call_stmt;
 			tree fndecl;
+			tree const_fmt;
 
 			/* Interested only in printf-alike function calls */
 			if (!is_gimple_call(g))
@@ -350,10 +351,12 @@ namespace gcc_hell {
 			log::debug << "\tChecking `"
 			       << func_name << "' for constant fmt string\n";
 
-			if (!printfun_has_const_fmt(call_stmt, func_name))
+			const_fmt = printfun_get_const_fmt(call_stmt, func_name);
+			if (const_fmt == NULL_TREE)
 				return NULL;
 
-			handle_printfunc(g, gsi, wi, call_stmt, func_name);
+			handle_printfunc(gsi, wi, call_stmt,
+					func_name, const_fmt);
 
 			return NULL;
 		}
@@ -369,7 +372,7 @@ namespace gcc_hell {
 				printfun::printfuns.end();
 		}
 
-		static inline bool printfun_has_const_fmt(gcall *stmt,
+		static inline tree printfun_get_const_fmt(gcall *stmt,
 				const char *func_name)
 		{
 			printfun::printfun_t pf;
@@ -378,18 +381,18 @@ namespace gcc_hell {
 			pf = printfun::printfuns.at(func_name);
 
 			if (gimple_call_num_args(stmt) <= pf.fmt_pos)
-				return false;
+				return NULL_TREE;
 
 			fmt_str = gimple_call_arg(stmt, pf.fmt_pos);
 			fmt_str = get_string_cst(fmt_str);
 
 			if (fmt_str == NULL_TREE)
-				return false;
+				return NULL_TREE;
 
 			if (!TREE_CONSTANT(fmt_str))
-				return false;
+				return NULL_TREE;
 
-			return true;
+			return fmt_str;
 		}
 
 		static tree get_string_cst(tree var)
@@ -420,10 +423,11 @@ namespace gcc_hell {
 			return NULL_TREE;
 		}
 
-		static void handle_printfunc(gimple *g,
-			gimple_stmt_iterator *gsi, struct walk_stmt_info *wi,
-			gcall *stmt, const char *func_name)
+		static void handle_printfunc(gimple_stmt_iterator *gsi,
+			struct walk_stmt_info *wi, gcall *stmt,
+			const char *func_name, tree const_fmt)
 		{
+			gimple *g = gsi_stmt(*gsi);
 			log::info << "\t\tTrying to handle `"
 				<< func_name << "' call";
 			if (gimple_has_location(g))
