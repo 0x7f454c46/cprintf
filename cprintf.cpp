@@ -322,24 +322,20 @@ namespace gcc_hell {
 			bool *handled_all_ops, struct walk_stmt_info *wi)
 		{
 			gimple *g = gsi_stmt(*gsi);
-			location_t l = gimple_location(g);
 			enum gimple_code code = gimple_code(g);
 
 			log::debug << "\tCallback for statement: `"
-				<< gimple_code_name[code] << "' at "
-				<< LOCATION_FILE(l) << ":"
-				<< LOCATION_LINE(l) << std::endl;
+				<< gimple_code_name[code];
+			if (gimple_has_location(g))
+				log::debug << "' at " << gimple_filename(g)
+					<< ":" << gimple_lineno(g);
+			log::debug << std::endl;
 
 			return NULL;
 		}
 
 		static tree callback_op(tree *t, int *, void *data)
 		{
-			enum tree_code code = TREE_CODE(*t);
-
-			log::debug << "\tCallback for operand `"
-				<< get_tree_code_name(code) << "'\n";
-
 			return NULL;
 		}
 	};
