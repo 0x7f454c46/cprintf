@@ -98,11 +98,10 @@ namespace log {
 
 namespace printfun {
 	struct printfun_t {
-		std::string				function;
 		unsigned int				fmt_pos;
 		std::map<std::string, std::string>	spec_to_func;
 	};
-	std::vector<printfun_t> printfuns;
+	std::map<std::string, printfun_t> printfuns;
 
 	static const char *parse_get_fmt_pos(const char *printfun_def,
 			unsigned int *out, std::string &func)
@@ -185,11 +184,12 @@ namespace printfun {
 	static void parse_printfun(const char *printfun_def)
 	{
 		printfun_t pf;
+		std::string fun_name;
 		unsigned int i;
 
-		printfun_def = parse_get_function(printfun_def, &pf.function);
+		printfun_def = parse_get_function(printfun_def, &fun_name);
 		printfun_def = parse_get_fmt_pos(printfun_def,
-				&pf.fmt_pos, pf.function);
+				&pf.fmt_pos, fun_name);
 		printfun_def++; /* skip function delimiter */
 
 		for (i = 0;;i++) {
@@ -211,11 +211,17 @@ namespace printfun {
 
 		if (i == 0) {
 			std::string err("Found no %-specifiers for `");
-			err += pf.function;
+			err += fun_name;
 			throw std::logic_error(err + "' function");
 		}
 
-		printfuns.push_back(pf);
+		if (printfuns.find(fun_name) != printfuns.end()) {
+			std::string err("Function `");
+			err += fun_name;
+			throw std::logic_error(err + "' defined twice");
+		}
+
+		printfuns[fun_name] = pf;
 	}
 };
 
