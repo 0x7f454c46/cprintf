@@ -272,9 +272,83 @@ static int parse_parameters(struct plugin_name_args *info)
 	return 0;
 }
 
+#include <tree.h>
+#include <tree-pass.h>
+#include <context.h>
+#include <gimple.h>
+#include <gimple-iterator.h>
+#include <gimple-walk.h>
+namespace gcc_hell {
+	const pass_data init_pass_data = {
+		GIMPLE_PASS,
+		"cprintf_walk",
+		OPTGROUP_NONE, TV_NONE,
+		PROP_gimple_any,	/* properties_required */
+		0,			/* properties_provided */
+		0,			/* properties_destroyed */
+		0,			/* todo_flags_start */
+		0			/* todo_flags_finish */
+	};
+
+	struct cprintf_pass : gimple_opt_pass
+	{
+		cprintf_pass(gcc::context *ctx)
+			: gimple_opt_pass(init_pass_data, ctx) {}
+
+		virtual unsigned int execute(function *fun) override
+		{
+			struct walk_stmt_info walk_stmt_info;
+
+			log::debug << "*** cprintf walk for function `"
+				<< function_name(fun) << "' at "
+				<< LOCATION_FILE(fun->function_start_locus)
+				<< ":"
+				<< LOCATION_LINE(fun->function_start_locus)
+				<< std::endl;
+
+			memset(&walk_stmt_info, 0, sizeof(walk_stmt_info));
+			walk_gimple_seq_mod(&fun->gimple_body, callback_stmt,
+					callback_op, &walk_stmt_info);
+
+			return 0;
+		}
+
+		virtual cprintf_pass* clone() override
+		{
+			return this; /* do not clone ourselves */
+		}
+	private:
+		static tree callback_stmt(gimple_stmt_iterator *gsi,
+			bool *handled_all_ops, struct walk_stmt_info *wi)
+		{
+			gimple *g = gsi_stmt(*gsi);
+			location_t l = gimple_location(g);
+			enum gimple_code code = gimple_code(g);
+
+			log::debug << "\tCallback for statement: `"
+				<< gimple_code_name[code] << "' at "
+				<< LOCATION_FILE(l) << ":"
+				<< LOCATION_LINE(l) << std::endl;
+
+			return NULL;
+		}
+
+		static tree callback_op(tree *t, int *, void *data)
+		{
+			enum tree_code code = TREE_CODE(*t);
+
+			log::debug << "\tCallback for operand `"
+				<< get_tree_code_name(code) << "'\n";
+
+			return NULL;
+		}
+	};
+};
+
 int plugin_init(struct plugin_name_args *info,
 		struct plugin_gcc_version *version)
 {
+	struct register_pass_info pass_info;
 	int ret;
 
 	/*
@@ -294,6 +368,18 @@ int plugin_init(struct plugin_name_args *info,
 			<< ret << std::endl;
 		return ret;
 	}
+
+	/*
+	 * Register cprintf pass before building CFG, otherwise
+	 * fun->gimple_body is not accessible anymore.
+	 */
+	pass_info.pass = new gcc_hell::cprintf_pass(g);
+	pass_info.reference_pass_name = "cfg";
+	pass_info.ref_pass_instance_number = 1;
+	pass_info.pos_op = PASS_POS_INSERT_BEFORE;
+
+	register_callback(info->base_name, PLUGIN_PASS_MANAGER_SETUP,
+			NULL, &pass_info);
 
 	return 0;
 }
