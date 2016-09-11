@@ -443,7 +443,7 @@ namespace gcc_hell {
 			tokens = tokens_create(fmt, pf);
 			if (tokens.size() == 0) {
 				if (gimple_has_location(g))
-					log::warn << "Ignoring format string at:"
+					log::warn << "\t\tIgnoring format string at:"
 						<< gimple_filename(g) << ":"
 						<< gimple_lineno(g) << "\n";
 			}
@@ -483,7 +483,7 @@ namespace gcc_hell {
 				}
 				token = specifier_search(fmt, pf);
 				if (token.length() == 0) {
-					log::warn << "This specifier wasn't defined in plugin parameters: `"
+					log::warn << "\t\tThis specifier wasn't defined in plugin parameters: `"
 						<< "%" << fmt << "'\n";
 					return std::vector<std::pair<std::string,bool>>();
 				}
