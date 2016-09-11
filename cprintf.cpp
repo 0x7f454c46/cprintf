@@ -446,6 +446,7 @@ namespace gcc_hell {
 					log::warn << "\t\tIgnoring format string at:"
 						<< gimple_filename(g) << ":"
 						<< gimple_lineno(g) << "\n";
+				return;
 			}
 			log::debug << "\t\tTokens from format string: ";
 			for (std::vector<std::pair<std::string, bool>>::iterator i =
