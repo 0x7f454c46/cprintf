@@ -480,7 +480,7 @@ namespace gcc_hell {
 					specs++;
 				insert_spec_func(pf, stmt, gsi, specs, tokens[i]);
 			}
-			//gsi_remove(gsi, true);
+			gsi_remove(gsi, true);
 		}
 
 		static std::vector<std::pair<std::string, bool>>
@@ -598,6 +598,7 @@ ret_empty_str:
 
 			/* Don't handle multi-arg spec handlers for now */
 			spec_args.create(pf.fmt_pos + 1);
+			spec_args.safe_grow_cleared(pf.fmt_pos + 1);
 			for (unsigned int i = 0; i < pf.fmt_pos; ++i)
 				spec_args[i] = gimple_call_arg(printf_stmt, i);
 			if (token.second) {
@@ -612,6 +613,7 @@ ret_empty_str:
 				spec_args[pf.fmt_pos] = fmt_part;
 			}
 			inserted = gimple_build_call_vec(spec_fn, spec_args);
+			spec_args.release();
 			gsi_insert_before(gsi, inserted, GSI_SAME_STMT);
 
 			log::info << "\t\tInserted call to `";
