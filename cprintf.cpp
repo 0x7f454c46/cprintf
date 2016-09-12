@@ -290,6 +290,22 @@ namespace gcc_hell {
 		0,			/* todo_flags_start */
 		0			/* todo_flags_finish */
 	};
+	static tree create_string_param(tree string)
+	{
+		tree i_type, a_type;
+		const int length = TREE_STRING_LENGTH(string);
+
+		gcc_assert(length > 0);
+
+		i_type = build_index_type(build_int_cst(NULL_TREE, length - 1));
+		a_type = build_array_type(char_type_node, i_type);
+
+		TREE_TYPE(string) = a_type;
+		TREE_CONSTANT(string) = 1;
+		TREE_READONLY(string) = 1;
+
+		return build1(ADDR_EXPR, ptr_type_node, string);
+	}
 
 	struct cprintf_pass : gimple_opt_pass
 	{
@@ -462,8 +478,9 @@ namespace gcc_hell {
 			for (size_t i = 0; i < tokens.size(); ++i) {
 				if (tokens[i].second)
 					specs++;
-				insert_spec_func(pf, stmt, specs, tokens[i]);
+				insert_spec_func(pf, stmt, gsi, specs, tokens[i]);
 			}
+			//gsi_remove(gsi, true);
 		}
 
 		static std::vector<std::pair<std::string, bool>>
@@ -547,9 +564,13 @@ ret_empty_str:
 		}
 
 		static void insert_spec_func(printfun::printfun_t &pf,
-			gcall *printf_stmt, size_t cur_spec,
-			std::pair<std::string, bool> token)
+			gcall *printf_stmt, gimple_stmt_iterator *gsi,
+			size_t cur_spec, std::pair<std::string, bool> token)
 		{
+			tree spec_fn;
+			vec<tree> spec_args;
+			gimple *inserted;
+
 			if (gimple_call_num_args(printf_stmt) <= pf.fmt_pos)
 				/* Should never happen ;-) */
 				throw std::logic_error("Internal cprintf plugin error: number of arguments in printf-like function is larger than constant string fmt parameter\n");
@@ -565,14 +586,42 @@ ret_empty_str:
 				if (pf.spec_to_tree.find(token.first) == pf.spec_to_tree.end())
 					build_spec_function(pf, printf_stmt,
 							cur_spec, token);
+				spec_fn = pf.spec_to_tree.at(token.first);
 			} else {
 				if (pf.spec_to_func.find("s") == pf.spec_to_func.end())
 					throw std::logic_error("Internal cprintf plugin error: found constant string to print without %s-specifier handler\n");
 				if (pf.spec_to_tree.find("s") == pf.spec_to_tree.end())
 					build_spec_function(pf, printf_stmt,
 							cur_spec, token);
+				spec_fn = pf.spec_to_tree.at("s");
 			}
 
+			/* Don't handle multi-arg spec handlers for now */
+			spec_args.create(pf.fmt_pos + 1);
+			for (unsigned int i = 0; i < pf.fmt_pos; ++i)
+				spec_args[i] = gimple_call_arg(printf_stmt, i);
+			if (token.second) {
+				unsigned token_arg = pf.fmt_pos + 1;
+				spec_args[pf.fmt_pos] =
+					gimple_call_arg(printf_stmt, token_arg);
+			} else {
+				std::string &s = token.first;
+				tree fmt_part =
+					build_string(s.length() + 1, s.c_str());
+				fmt_part = create_string_param(fmt_part);
+				spec_args[pf.fmt_pos] = fmt_part;
+			}
+			inserted = gimple_build_call_vec(spec_fn, spec_args);
+			gsi_insert_before(gsi, inserted, GSI_SAME_STMT);
+
+			log::info << "\t\tInserted call to `";
+			if (token.second) {
+				log::info << pf.spec_to_func.at(token.first);
+			} else {
+				log::info << pf.spec_to_func.at("s");
+				log::info << "(\"" << token.first << "\")";
+			}
+			log::info << "' function\n";
 		}
 
 		static void build_spec_function(printfun::printfun_t &pf,
