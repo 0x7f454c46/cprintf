@@ -605,7 +605,7 @@ ret_empty_str:
 			for (unsigned int i = 0; i < pf.fmt_pos; ++i)
 				spec_args[i] = gimple_call_arg(printf_stmt, i);
 			if (token.second) {
-				unsigned token_arg = pf.fmt_pos + 1;
+				unsigned token_arg = pf.fmt_pos + cur_spec;
 				spec_args[pf.fmt_pos] =
 					gimple_call_arg(printf_stmt, token_arg);
 			} else {
