@@ -458,6 +458,12 @@ namespace gcc_hell {
 			}
 			log::debug << std::endl;
 
+			size_t specs = 0;
+			for (size_t i = 0; i < tokens.size(); ++i) {
+				if (tokens[i].second)
+					specs++;
+				insert_spec_func(pf, stmt, specs, tokens[i]);
+			}
 		}
 
 		static std::vector<std::pair<std::string, bool>>
@@ -465,16 +471,26 @@ namespace gcc_hell {
 		{
 			std::vector<std::pair<std::string, bool>> ret;
 			std::string token;
+			/*
+			 * Do we have %s-function?
+			 * XXX: maybe it's worth to fail to %c in some cases?
+			 */
+			bool can_handle_strings =
+				specifier_search("s", pf).length();
 
 			while (*fmt != '\0') {
 				if (*fmt != '%') {
 					token += *fmt++;
+					if (!can_handle_strings)
+						goto ret_empty_str;
 					continue;
 				}
 				/* escaped '%' symbol */
 				if (*(fmt + 1) == '%') {
 					token += '%';
 					fmt += 2;
+					if (!can_handle_strings)
+						goto ret_empty_str;
 					continue;
 				}
 				fmt++;
@@ -486,16 +502,22 @@ namespace gcc_hell {
 				if (token.length() == 0) {
 					log::warn << "\t\tThis specifier wasn't defined in plugin parameters: `"
 						<< "%" << fmt << "'\n";
-					return std::vector<std::pair<std::string,bool>>();
+					goto ret_empty_str;
 				}
 				ret.push_back(std::make_pair(token,true));
 				fmt += token.length();
 				token.clear();
 			}
 
-			if (token.length())
+			if (token.length()) {
+				if (!can_handle_strings)
+					goto ret_empty_str;
 				ret.push_back(std::make_pair(token,false));
+			}
 			return ret;
+
+ret_empty_str:
+			return std::vector<std::pair<std::string,bool>>();
 		}
 
 		static std::string specifier_search(const char *fmt,
@@ -522,6 +544,80 @@ namespace gcc_hell {
 			}
 
 			return ret;
+		}
+
+		static void insert_spec_func(printfun::printfun_t &pf,
+			gcall *printf_stmt, size_t cur_spec,
+			std::pair<std::string, bool> token)
+		{
+			if (gimple_call_num_args(printf_stmt) <= pf.fmt_pos)
+				/* Should never happen ;-) */
+				throw std::logic_error("Internal cprintf plugin error: number of arguments in printf-like function is larger than constant string fmt parameter\n");
+
+			if (token.second) {
+				/*
+				 * We checked that already while splitting
+				 * fmt string, but let's be cautious
+				 */
+				if (pf.spec_to_func.find(token.first) == pf.spec_to_func.end())
+					throw std::logic_error("Internal cprintf plugin error: found unknown specifier after splitting fmt string\n");
+
+				if (pf.spec_to_tree.find(token.first) == pf.spec_to_tree.end())
+					build_spec_function(pf, printf_stmt,
+							cur_spec, token);
+			} else {
+				if (pf.spec_to_func.find("s") == pf.spec_to_func.end())
+					throw std::logic_error("Internal cprintf plugin error: found constant string to print without %s-specifier handler\n");
+				if (pf.spec_to_tree.find("s") == pf.spec_to_tree.end())
+					build_spec_function(pf, printf_stmt,
+							cur_spec, token);
+			}
+
+		}
+
+		static void build_spec_function(printfun::printfun_t &pf,
+			gcall *printf_stmt, size_t cur_spec,
+			std::pair<std::string, bool> token)
+		{
+			std::vector<tree> args;
+			tree fntype;
+			tree func_decl;
+			std::string func_name;
+
+			for (unsigned int i = 0; i < pf.fmt_pos; ++i) {
+				tree arg_n = gimple_call_arg(printf_stmt, i);
+				args.push_back(TREE_TYPE(arg_n));
+			}
+
+			if (token.second) {
+				tree spec_param = gimple_call_arg(printf_stmt,
+						pf.fmt_pos + cur_spec);
+				args.push_back(TREE_TYPE(spec_param));
+				func_name = pf.spec_to_func.at(token.first);
+			} else {
+				tree const_char_ptr_type_node = build_pointer_type(build_type_variant(char_type_node, 1, 0));
+				args.push_back(const_char_ptr_type_node);
+				func_name = pf.spec_to_func.at("s");
+			}
+
+			/*
+			 * Function return type is void for now.
+			 * &args[0] is contiguos array - that's guaranteed
+			 * now by C++ spec, 23.3.11
+			 */
+			fntype = build_function_type_array(void_type_node,
+					pf.fmt_pos + 1, &args[0]);
+			func_decl = build_fn_decl(func_name.c_str(), fntype);
+			if (token.second)
+				pf.spec_to_tree[token.first] = func_decl;
+			else
+				pf.spec_to_tree["s"] = func_decl;
+			TREE_PUBLIC(func_decl)		= 1;
+			DECL_EXTERNAL(func_decl)	= 1;
+			DECL_ARTIFICIAL(func_decl)	= 1;
+			TREE_USED(func_decl)		= 1;
+			log::debug << "\t\tBuilded declaration for `" <<
+				func_name << "'\n";
 		}
 	};
 };
