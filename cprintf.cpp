@@ -143,15 +143,18 @@ namespace printfun {
 		while (ISBLANK(*printfun_def)) printfun_def++;
 		if (*printfun_def == '\0')
 			throw std::logic_error("No function name specified");
-		if (!ISALPHA(*printfun_def)) {
-			std::string err("Function name should start with character: `");
+		if (!ISALPHA(*printfun_def) && *printfun_def != '_') {
+			std::string err("Function name should start with character or underscore, not with: `");
 			err += *printfun_def++;
-			while (ISALPHA(*printfun_def) || ISDIGIT(*printfun_def))
+			while (ISALPHA(*printfun_def) ||
+					ISDIGIT(*printfun_def) ||
+					*printfun_def == '_')
 				err += *printfun_def++;
 			throw std::logic_error(err + "'");
 		}
 
-		while (ISALPHA(*printfun_def) || ISDIGIT(*printfun_def))
+		while (ISALPHA(*printfun_def) || ISDIGIT(*printfun_def) ||
+				*printfun_def == '_')
 			*out += *printfun_def++;
 		return printfun_def;
 	}
