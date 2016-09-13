@@ -11,7 +11,7 @@ print_on_level(LOG_DEBUG, "cwd:%x swd:%x twd:%x fop:%x mxcsr:%x mxcsr_mask:%x\n"
                 (int)i387->cwd, (int)i387->swd, (int)i387->twd,
                 (int)i387->fop, (int)i387->mxcsr, (int)i387->mxcsr_mask);
 ```
-To sequience of calls like:
+To sequence of calls like:
 ```
 print_str_level(LOG_DEBUG, "cwd:");
 print_int_level(LOG_DEBUG, (int)i387->cwd);
@@ -37,7 +37,7 @@ To use this GCC compiler plugin, you need compile it with:
 ```
 make
 ```
-Then change your makefile so gcc will use plugin like this:
+Then change your makefile so GCC will use plugin like this:
 ```
 %.o: %.c
     gcc -o $@ $< -fplugin=./cprintf.so -fplugin-arg-cprintf-printf="printf(0): %c putchar %s putstring  \
@@ -49,3 +49,19 @@ they will be passed to handlers in the same order.
 
 Handlers: `putchar` function for `%c` specifier and so on.
 Note, specifier may be any length, ending with space symbol. I.e., `%h$up ` is a valid specifier `h$up`.
+
+## Reserved specifiers
+For some user-defined function `foo(arg1, arg2, const char *fmt, ...)` cprintf
+plugin expects that following specifiers have their special meaning if
+handler-functions have been specified in plugin args:
+* `%s` is for strings (const char\*). Cprintf will use it to output parts of
+format string between specifiers; Function prototype in example:
+`bar(arg1, arg2, const char *str);`
+* `%c` is for chars (const char). Cprintf will use it to output single chars
+from format string; Function prototype in example:
+`baz(arg1, arg2, const char s);`
+* `%%` special meaning for raw string output; Function prototype in example:
+`quux(arg1, arg2, void *ptr, size_t size, size_t nmemb);`
+
+Tip: consider using `%%` specifier as `fwrite()` function as it will
+give great performance enhance.
