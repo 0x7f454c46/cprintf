@@ -283,6 +283,7 @@ static int parse_parameters(struct plugin_name_args *info)
 #include <gimple-iterator.h>
 #include <gimple-walk.h>
 namespace gcc_hell {
+	const size_t prefer_puts = 1;
 	const pass_data init_pass_data = {
 		GIMPLE_PASS,
 		"cprintf_walk",
@@ -491,10 +492,7 @@ namespace gcc_hell {
 		{
 			std::vector<std::pair<std::string, bool>> ret;
 			std::string token;
-			/*
-			 * Do we have %s-function?
-			 * XXX: maybe it's worth to fail to %c in some cases?
-			 */
+			/* Do we have %s-function? */
 			bool can_handle_strings =
 				specifier_search("s", pf).length();
 
@@ -591,12 +589,20 @@ ret_empty_str:
 							cur_spec, token);
 				spec_fn = pf.spec_to_tree.at(token.first);
 			} else {
-				if (pf.spec_to_func.find("s") == pf.spec_to_func.end())
-					throw std::logic_error("Internal cprintf plugin error: found constant string to print without %s-specifier handler\n");
-				if (pf.spec_to_tree.find("s") == pf.spec_to_tree.end())
-					build_spec_function(pf, printf_stmt,
-							cur_spec, token);
-				spec_fn = pf.spec_to_tree.at("s");
+				if (token.first.length() <= prefer_puts &&
+						pf.spec_to_func.find("c") != pf.spec_to_func.end()) {
+					if (pf.spec_to_tree.find("c") == pf.spec_to_tree.end())
+						build_spec_function(pf, printf_stmt,
+								cur_spec, token);
+					spec_fn = pf.spec_to_tree.at("c");
+				} else {
+					if (pf.spec_to_func.find("s") == pf.spec_to_func.end())
+						throw std::logic_error("Internal cprintf plugin error: found constant string to print without %s-specifier handler\n");
+					if (pf.spec_to_tree.find("s") == pf.spec_to_tree.end())
+						build_spec_function(pf, printf_stmt,
+								cur_spec, token);
+					spec_fn = pf.spec_to_tree.at("s");
+				}
 			}
 
 			/* Don't handle multi-arg spec handlers for now */
@@ -609,11 +615,19 @@ ret_empty_str:
 				spec_args[pf.fmt_pos] =
 					gimple_call_arg(printf_stmt, token_arg);
 			} else {
-				std::string &s = token.first;
-				tree fmt_part =
-					build_string(s.length() + 1, s.c_str());
-				fmt_part = create_string_param(fmt_part);
-				spec_args[pf.fmt_pos] = fmt_part;
+				/* XXX: handle prefer_puts > 1 */
+				if (token.first.length() <= prefer_puts &&
+						pf.spec_to_func.find("c") != pf.spec_to_func.end()) {
+					tree f = build_int_cst(char_type_node,
+							token.first[0]);
+					spec_args[pf.fmt_pos] = f;
+				} else {
+					std::string &s = token.first;
+					tree fmt_part =
+						build_string(s.length() + 1, s.c_str());
+					fmt_part = create_string_param(fmt_part);
+					spec_args[pf.fmt_pos] = fmt_part;
+				}
 			}
 			inserted = gimple_build_call_vec(spec_fn, spec_args);
 			spec_args.release();
@@ -623,7 +637,11 @@ ret_empty_str:
 			if (token.second) {
 				log::info << pf.spec_to_func.at(token.first);
 			} else {
-				log::info << pf.spec_to_func.at("s");
+				if (token.first.length() <= prefer_puts &&
+						pf.spec_to_func.find("c") != pf.spec_to_func.end())
+					log::info << pf.spec_to_func.at("c");
+				else
+					log::info << pf.spec_to_func.at("s");
 				log::info << "(\"" << token.first << "\")";
 			}
 			log::info << "' function\n";
@@ -649,9 +667,15 @@ ret_empty_str:
 				args.push_back(TREE_TYPE(spec_param));
 				func_name = pf.spec_to_func.at(token.first);
 			} else {
-				tree const_char_ptr_type_node = build_pointer_type(build_type_variant(char_type_node, 1, 0));
-				args.push_back(const_char_ptr_type_node);
-				func_name = pf.spec_to_func.at("s");
+				if (token.first.length() <= prefer_puts &&
+						pf.spec_to_func.find("c") != pf.spec_to_func.end()) {
+					args.push_back(char_type_node);
+					func_name = pf.spec_to_func.at("c");
+				} else {
+					tree const_char_ptr_type_node = build_pointer_type(build_type_variant(char_type_node, 1, 0));
+					args.push_back(const_char_ptr_type_node);
+					func_name = pf.spec_to_func.at("s");
+				}
 			}
 
 			/*
@@ -662,10 +686,15 @@ ret_empty_str:
 			fntype = build_function_type_array(void_type_node,
 					pf.fmt_pos + 1, &args[0]);
 			func_decl = build_fn_decl(func_name.c_str(), fntype);
-			if (token.second)
+			if (token.second) {
 				pf.spec_to_tree[token.first] = func_decl;
-			else
-				pf.spec_to_tree["s"] = func_decl;
+			} else {
+				if (token.first.length() <= prefer_puts &&
+						pf.spec_to_func.find("c") != pf.spec_to_func.end())
+					pf.spec_to_tree["c"] = func_decl;
+				else
+					pf.spec_to_tree["s"] = func_decl;
+			}
 			TREE_PUBLIC(func_decl)		= 1;
 			DECL_EXTERNAL(func_decl)	= 1;
 			DECL_ARTIFICIAL(func_decl)	= 1;
