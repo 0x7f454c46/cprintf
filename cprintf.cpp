@@ -211,6 +211,18 @@ namespace printfun {
 				throw std::logic_error(err + "' found twice");
 			}
 			pf.spec_to_func[spec] = func;
+			if (spec[0] == '%') { /* it's %% specifier really */
+				if (spec.length() > 1) {
+					std::string err("Found `%");
+					err += spec;
+					err += "' specifier for `";
+					err += func;
+					err += "', can handle only `%%'";
+					throw std::logic_error(err);
+				}
+				log::info << "Reserved %% specifier for `"
+					<< func << "'\n";
+			}
 		}
 
 		if (i == 0) {
@@ -227,8 +239,8 @@ namespace printfun {
 
 		printfuns[fun_name] = pf;
 
-		log::info << "Added new function to printfuns: `"
-			<< fun_name << "(" << pf.fmt_pos << "):\n";
+		log::info << "Specifier handlers for `"
+			<< fun_name << "(" << pf.fmt_pos << ")':\n";
 		std::map<std::string, std::string>::const_iterator s;
 		for (s = pf.spec_to_func.cbegin(); s != pf.spec_to_func.cend(); ++s)
 			log::debug << "\t%" << (*s).first
@@ -589,7 +601,12 @@ ret_empty_str:
 							cur_spec, token);
 				spec_fn = pf.spec_to_tree.at(token.first);
 			} else {
-				if (token.first.length() <= prefer_puts &&
+				if (pf.spec_to_func.find("%") != pf.spec_to_func.end()) {
+					if (pf.spec_to_tree.find("%") == pf.spec_to_tree.end())
+						build_spec_function(pf, printf_stmt,
+								cur_spec, token);
+					spec_fn = pf.spec_to_tree.at("%");
+				} else if (token.first.length() <= prefer_puts &&
 						pf.spec_to_func.find("c") != pf.spec_to_func.end()) {
 					if (pf.spec_to_tree.find("c") == pf.spec_to_tree.end())
 						build_spec_function(pf, printf_stmt,
@@ -611,12 +628,28 @@ ret_empty_str:
 			for (unsigned int i = 0; i < pf.fmt_pos; ++i)
 				spec_args[i] = gimple_call_arg(printf_stmt, i);
 			if (token.second) {
+				/*
+				 * XXX: check for %s + const string parameter
+				 * and combine it with format-string + fwrite()
+				 */
 				unsigned token_arg = pf.fmt_pos + cur_spec;
 				spec_args[pf.fmt_pos] =
 					gimple_call_arg(printf_stmt, token_arg);
 			} else {
+				if (pf.spec_to_func.find("%") != pf.spec_to_func.end()) {
+					/* const char *ptr, size_t size, size_t nmemb */
+					spec_args.safe_grow_cleared(pf.fmt_pos + 3);
+					std::string &s = token.first;
+					tree fmt = build_string(s.length() + 1, s.c_str());
+					tree size = build_int_cst(size_type_node, 1);
+					tree nmemb = build_int_cst(size_type_node,
+							s.length());
+					fmt = create_string_param(fmt);
+					spec_args[pf.fmt_pos] = fmt;
+					spec_args[pf.fmt_pos + 1] = size;
+					spec_args[pf.fmt_pos + 2] = nmemb;
 				/* XXX: handle prefer_puts > 1 */
-				if (token.first.length() <= prefer_puts &&
+				} else if (token.first.length() <= prefer_puts &&
 						pf.spec_to_func.find("c") != pf.spec_to_func.end()) {
 					tree f = build_int_cst(char_type_node,
 							token.first[0]);
@@ -637,7 +670,9 @@ ret_empty_str:
 			if (token.second) {
 				log::info << pf.spec_to_func.at(token.first);
 			} else {
-				if (token.first.length() <= prefer_puts &&
+				if (pf.spec_to_func.find("%") != pf.spec_to_func.end())
+					log::info << pf.spec_to_func.at("%");
+				else if (token.first.length() <= prefer_puts &&
 						pf.spec_to_func.find("c") != pf.spec_to_func.end())
 					log::info << pf.spec_to_func.at("c");
 				else
@@ -667,12 +702,18 @@ ret_empty_str:
 				args.push_back(TREE_TYPE(spec_param));
 				func_name = pf.spec_to_func.at(token.first);
 			} else {
-				if (token.first.length() <= prefer_puts &&
+				tree const_char_ptr_type_node =
+					build_pointer_type(build_type_variant(char_type_node, 1, 0));
+				if (pf.spec_to_func.find("%") != pf.spec_to_func.end()) {
+					args.push_back(const_char_ptr_type_node);
+					args.push_back(size_type_node);
+					args.push_back(size_type_node);
+					func_name = pf.spec_to_func.at("%");
+				} else if (token.first.length() <= prefer_puts &&
 						pf.spec_to_func.find("c") != pf.spec_to_func.end()) {
 					args.push_back(char_type_node);
 					func_name = pf.spec_to_func.at("c");
 				} else {
-					tree const_char_ptr_type_node = build_pointer_type(build_type_variant(char_type_node, 1, 0));
 					args.push_back(const_char_ptr_type_node);
 					func_name = pf.spec_to_func.at("s");
 				}
@@ -689,7 +730,9 @@ ret_empty_str:
 			if (token.second) {
 				pf.spec_to_tree[token.first] = func_decl;
 			} else {
-				if (token.first.length() <= prefer_puts &&
+				if (pf.spec_to_func.find("%") != pf.spec_to_func.end())
+					pf.spec_to_tree["%"] = func_decl;
+				else if (token.first.length() <= prefer_puts &&
 						pf.spec_to_func.find("c") != pf.spec_to_func.end())
 					pf.spec_to_tree["c"] = func_decl;
 				else
