@@ -77,6 +77,11 @@ void __putulong(unsigned long num)
 	__putlong((long)num);
 }
 
+void __putwrite(const char *str, size_t size, size_t nmemb)
+{
+	fwrite(str, size, nmemb, stdout);
+}
+
 int timeval_subtract(struct timeval *result,
 		struct timeval *a, struct timeval *b)
 {

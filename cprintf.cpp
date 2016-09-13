@@ -601,17 +601,17 @@ ret_empty_str:
 							cur_spec, token);
 				spec_fn = pf.spec_to_tree.at(token.first);
 			} else {
-				if (pf.spec_to_func.find("%") != pf.spec_to_func.end()) {
-					if (pf.spec_to_tree.find("%") == pf.spec_to_tree.end())
-						build_spec_function(pf, printf_stmt,
-								cur_spec, token);
-					spec_fn = pf.spec_to_tree.at("%");
-				} else if (token.first.length() <= prefer_puts &&
+				if (token.first.length() <= prefer_puts &&
 						pf.spec_to_func.find("c") != pf.spec_to_func.end()) {
 					if (pf.spec_to_tree.find("c") == pf.spec_to_tree.end())
 						build_spec_function(pf, printf_stmt,
 								cur_spec, token);
 					spec_fn = pf.spec_to_tree.at("c");
+				} else if (pf.spec_to_func.find("%") != pf.spec_to_func.end()) {
+					if (pf.spec_to_tree.find("%") == pf.spec_to_tree.end())
+						build_spec_function(pf, printf_stmt,
+								cur_spec, token);
+					spec_fn = pf.spec_to_tree.at("%");
 				} else {
 					if (pf.spec_to_func.find("s") == pf.spec_to_func.end())
 						throw std::logic_error("Internal cprintf plugin error: found constant string to print without %s-specifier handler\n");
@@ -636,7 +636,13 @@ ret_empty_str:
 				spec_args[pf.fmt_pos] =
 					gimple_call_arg(printf_stmt, token_arg);
 			} else {
-				if (pf.spec_to_func.find("%") != pf.spec_to_func.end()) {
+				/* XXX: handle prefer_puts > 1 */
+				if (token.first.length() <= prefer_puts &&
+						pf.spec_to_func.find("c") != pf.spec_to_func.end()) {
+					tree f = build_int_cst(char_type_node,
+							token.first[0]);
+					spec_args[pf.fmt_pos] = f;
+				} else if (pf.spec_to_func.find("%") != pf.spec_to_func.end()) {
 					/* const char *ptr, size_t size, size_t nmemb */
 					spec_args.safe_grow_cleared(pf.fmt_pos + 3);
 					std::string &s = token.first;
@@ -648,12 +654,6 @@ ret_empty_str:
 					spec_args[pf.fmt_pos] = fmt;
 					spec_args[pf.fmt_pos + 1] = size;
 					spec_args[pf.fmt_pos + 2] = nmemb;
-				/* XXX: handle prefer_puts > 1 */
-				} else if (token.first.length() <= prefer_puts &&
-						pf.spec_to_func.find("c") != pf.spec_to_func.end()) {
-					tree f = build_int_cst(char_type_node,
-							token.first[0]);
-					spec_args[pf.fmt_pos] = f;
 				} else {
 					std::string &s = token.first;
 					tree fmt_part =
@@ -670,11 +670,11 @@ ret_empty_str:
 			if (token.second) {
 				log::info << pf.spec_to_func.at(token.first);
 			} else {
-				if (pf.spec_to_func.find("%") != pf.spec_to_func.end())
-					log::info << pf.spec_to_func.at("%");
-				else if (token.first.length() <= prefer_puts &&
+				if (token.first.length() <= prefer_puts &&
 						pf.spec_to_func.find("c") != pf.spec_to_func.end())
 					log::info << pf.spec_to_func.at("c");
+				else if (pf.spec_to_func.find("%") != pf.spec_to_func.end())
+					log::info << pf.spec_to_func.at("%");
 				else
 					log::info << pf.spec_to_func.at("s");
 				log::info << "(\"" << token.first << "\")";
@@ -704,15 +704,15 @@ ret_empty_str:
 			} else {
 				tree const_char_ptr_type_node =
 					build_pointer_type(build_type_variant(char_type_node, 1, 0));
-				if (pf.spec_to_func.find("%") != pf.spec_to_func.end()) {
+				if (token.first.length() <= prefer_puts &&
+						pf.spec_to_func.find("c") != pf.spec_to_func.end()) {
+					args.push_back(char_type_node);
+					func_name = pf.spec_to_func.at("c");
+				} else if (pf.spec_to_func.find("%") != pf.spec_to_func.end()) {
 					args.push_back(const_char_ptr_type_node);
 					args.push_back(size_type_node);
 					args.push_back(size_type_node);
 					func_name = pf.spec_to_func.at("%");
-				} else if (token.first.length() <= prefer_puts &&
-						pf.spec_to_func.find("c") != pf.spec_to_func.end()) {
-					args.push_back(char_type_node);
-					func_name = pf.spec_to_func.at("c");
 				} else {
 					args.push_back(const_char_ptr_type_node);
 					func_name = pf.spec_to_func.at("s");
@@ -730,11 +730,11 @@ ret_empty_str:
 			if (token.second) {
 				pf.spec_to_tree[token.first] = func_decl;
 			} else {
-				if (pf.spec_to_func.find("%") != pf.spec_to_func.end())
-					pf.spec_to_tree["%"] = func_decl;
-				else if (token.first.length() <= prefer_puts &&
+				if (token.first.length() <= prefer_puts &&
 						pf.spec_to_func.find("c") != pf.spec_to_func.end())
 					pf.spec_to_tree["c"] = func_decl;
+				else if (pf.spec_to_func.find("%") != pf.spec_to_func.end())
+					pf.spec_to_tree["%"] = func_decl;
 				else
 					pf.spec_to_tree["s"] = func_decl;
 			}

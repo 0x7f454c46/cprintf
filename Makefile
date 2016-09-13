@@ -46,7 +46,8 @@ check: $(PLUGIN_SO)
 	$(CC) -fplugin=./$(PLUGIN_SO)					\
 		./test/crlog.c -o ./test/crlog				\
 		-fplugin-arg-cprintf-printf="printf(0): %s __puts	\
-			%c putchar %li __putlong %d __putshort %lu __putulong"
+			%c putchar %li __putlong %d __putshort		\
+			%lu __putulong %% __putwrite"
 	./test/crlog > /dev/null
 
 .PHONY: all clean check
