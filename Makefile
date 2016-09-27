@@ -1,6 +1,6 @@
 PLUGIN		:= cprintf
 PLUGIN_SO	:= $(addsuffix .so,$(PLUGIN))
-OBJS		:= cprintf log
+OBJS		:= cprintf log printfun
 
 PLUGIN_INCLUDE	:= $(shell gcc -print-file-name=plugin)
 ifeq ($(PLUGIN_INCLUDE),plugin)
