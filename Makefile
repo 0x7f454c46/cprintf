@@ -10,17 +10,6 @@ CXX		:= g++
 CC		:= gcc
 CXXFLAGS	+= -I $(PLUGIN_INCLUDE)/include
 
-define newline
-
-
-endef
-
-# map function:
-# $1 - func to call
-# $2 - list over which map the $1 func
-# result is divided with newlines
-map = $(foreach x,$2,$(call $1,$x)$(newline))
-
 all: $(PLUGIN_SO)
 
 %.so: %.o
