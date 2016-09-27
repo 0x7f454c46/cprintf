@@ -1,5 +1,6 @@
 PLUGIN		:= cprintf
 PLUGIN_SO	:= $(addsuffix .so,$(PLUGIN))
+OBJS		:= cprintf log
 
 PLUGIN_INCLUDE	:= $(shell gcc -print-file-name=plugin)
 ifeq ($(PLUGIN_INCLUDE),plugin)
@@ -12,8 +13,8 @@ CXXFLAGS	+= -I $(PLUGIN_INCLUDE)/include
 
 all: $(PLUGIN_SO)
 
-%.so: %.o
-	$(CXX) $(LDFLAGS) -shared -fno-rtti -o $@ $<
+$(PLUGIN_SO): $(addsuffix .o,$(OBJS))
+	$(CXX) $(LDFLAGS) -shared -fno-rtti -o $@ $^
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -fPIC -fno-rtti -c -o $@ $<
